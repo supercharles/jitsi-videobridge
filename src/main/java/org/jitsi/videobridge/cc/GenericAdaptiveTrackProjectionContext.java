@@ -86,7 +86,7 @@ class GenericAdaptiveTrackProjectionContext
     private long timestampDelta;
 
     /**
-     * A boolean that indicates whether or not the timestap delta has been
+     * A boolean that indicates whether or not the timestamp delta has been
      * initialized. This is only necessary upon adaptive track projection
      * context switches.
      */
@@ -178,7 +178,7 @@ class GenericAdaptiveTrackProjectionContext
                             destinationSequenceNumber,
                             sourceSequenceNumber);
 
-                logger.debug(() -> "delta ssrc=" + rtpPacket.getSsrc()
+                logger.trace(() -> "delta ssrc=" + rtpPacket.getSsrc()
                     + ",src_sequence=" + sourceSequenceNumber
                     + ",dst_sequence=" + destinationSequenceNumber
                     + ",max_sequence=" + maxDestinationSequenceNumber
@@ -220,14 +220,14 @@ class GenericAdaptiveTrackProjectionContext
                 maxDestinationTimestamp = destinationTimestamp;
             }
 
-                logger.debug(() -> "accept ssrc=" + rtpPacket.getSsrc()
+                logger.trace(() -> "accept ssrc=" + rtpPacket.getSsrc()
                 + ",src_sequence=" + sourceSequenceNumber
                 + ",dst_sequence=" + destinationSequenceNumber
                 + ",max_sequence=" + maxDestinationSequenceNumber);
         }
         else
         {
-            logger.debug(() -> "reject ssrc=" + rtpPacket.getSsrc()
+            logger.trace(() -> "reject ssrc=" + rtpPacket.getSsrc()
                 + ",src_sequence=" + sourceSequenceNumber);
         }
 

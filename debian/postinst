@@ -62,7 +62,7 @@ case "$1" in
         fi
 
         # Store it, so we can use it if xmpp server is on same machine
-        # we are currently doing this on every upgrade in order to be able to succesfully upgrade
+        # we are currently doing this on every upgrade in order to be able to successfully upgrade
         # from old packages, otherwise we can do it only when secret is first time generated
         db_set jitsi-videobridge/jvbsecret $JVB_SECRET
 
@@ -95,6 +95,12 @@ case "$1" in
         # unused old parameter, systemd unit files does not resolve bash variables,
         # and this breaks startup script
         sed -i 's/\$JVB_EXTRA_JVM_PARAMS//g' $CONFIG
+
+        if ! grep -q "org.ice4j.ice.harvest.STUN_MAPPING_HARVESTER_ADDRESSES" "$NEW_JITSI_CONFIG" \
+          && ! grep -q "org.ice4j.ice.harvest.NAT_HARVESTER_PUBLIC_ADDRESS" "$NEW_JITSI_CONFIG" ;then
+            echo "org.ice4j.ice.harvest.DISABLE_AWS_HARVESTER=true" >> $NEW_JITSI_CONFIG
+            echo "org.ice4j.ice.harvest.STUN_MAPPING_HARVESTER_ADDRESSES=meet-jit-si-turnrelay.jitsi.net:443" >> $NEW_JITSI_CONFIG
+        fi
 
         if ! grep -q "#org.jitsi.videobridge.AUTHORIZED_SOURCE_REGEXP" "$NEW_JITSI_CONFIG" ;then
             sed -i 's/org.jitsi.videobridge.AUTHORIZED_SOURCE_REGEXP/#org.jitsi.videobridge.AUTHORIZED_SOURCE_REGEXP/g' $NEW_JITSI_CONFIG
@@ -163,7 +169,7 @@ case "$1" in
 
         # ensure videobridge is not running - it will be started at the end
         if [ -d /run/systemd/system ]; then
-            systemctl stop jitsi-videobridge.service >/dev/null || true
+            systemctl stop jitsi-videobridge2.service >/dev/null || true
         fi
 
         # clean up old jvb group
@@ -176,6 +182,7 @@ case "$1" in
         # OpenVZ containers do not typically allow permission to modify the
         # kernel with sysctl config values.
         sysctl --system || true
+
     ;;
 
     abort-upgrade|abort-remove|abort-deconfigure)

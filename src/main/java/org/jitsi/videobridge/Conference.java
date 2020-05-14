@@ -205,7 +205,7 @@ public class Conference
     /**
      * This {@link Conference}'s link to Octo.
      */
-    private OctoTentacle tentacle;
+    private ConfOctoTransport tentacle;
 
     /**
      * Initializes a new <tt>Conference</tt> instance which is to represent a
@@ -444,7 +444,10 @@ public class Conference
             String id
                 = dominantSpeaker == null ? "null" : dominantSpeaker.getID();
             logger.info("ds_change ds_id=" + id);
+            getVideobridge().getStatistics().totalDominantSpeakerChanges.increment();
         }
+
+        speechActivityEndpointsChanged(speechActivity.getEndpointIds());
 
         if (dominantSpeaker != null)
         {
@@ -667,7 +670,6 @@ public class Conference
      */
     @NotNull
     public Endpoint createLocalEndpoint(String id, boolean iceControlling)
-        throws IOException
     {
         final AbstractEndpoint existingEndpoint = getEndpoint(id);
         if (existingEndpoint instanceof OctoEndpoint)
@@ -961,10 +963,16 @@ public class Conference
     void endpointExpired(AbstractEndpoint endpoint)
     {
         final AbstractEndpoint removedEndpoint;
-        removedEndpoint = endpoints.remove(endpoint.getID());
+        String id = endpoint.getID();
+        removedEndpoint = endpoints.remove(id);
         if (removedEndpoint != null)
         {
             updateEndpointsCache();
+        }
+
+        if (tentacle != null)
+        {
+            tentacle.endpointExpired(id);
         }
 
         if (removedEndpoint != null)
@@ -1061,11 +1069,10 @@ public class Conference
     /**
      * Notifies this instance that the list of ordered endpoints has changed
      */
-    void speechActivityEndpointsChanged()
+    void speechActivityEndpointsChanged(List<String> newEndpointIds)
     {
-        List<String> endpoints = speechActivity.getEndpointIds();
         endpointsCache.forEach(
-                e ->  e.speechActivityEndpointsChanged(endpoints));
+                e ->  e.speechActivityEndpointsChanged(newEndpointIds));
     }
 
     /**
@@ -1213,18 +1220,22 @@ public class Conference
     }
 
     /**
-     * @return The {@link OctoTentacle} for this conference.
+     * @return The {@link ConfOctoTransport} for this conference.
      */
-    public OctoTentacle getTentacle()
+    public ConfOctoTransport getTentacle()
     {
         if (tentacle == null)
         {
-            tentacle = new OctoTentacle(this);
+            tentacle = new ConfOctoTransport(this);
             tentacle.addPropertyChangeListener(propertyChangeListener);
         }
         return tentacle;
     }
 
+    public boolean isOctoEnabled()
+    {
+        return tentacle != null;
+    }
 
     /**
      * Handles an RTP/RTCP packet coming from a specific endpoint.
@@ -1308,7 +1319,7 @@ public class Conference
             debugState.put("includeInStatistics", includeInStatistics);
             debugState.put("statistics", statistics.getJson());
             //debugState.put("encodingsManager", encodingsManager.getDebugState());
-            OctoTentacle tentacle = this.tentacle;
+            ConfOctoTransport tentacle = this.tentacle;
             debugState.put(
                     "tentacle",
                     tentacle == null ? null : tentacle.getDebugState());
@@ -1325,6 +1336,27 @@ public class Conference
             }
         }
         return debugState;
+    }
+
+    /**
+     * Whether this looks like a conference in which the two endpoints are
+     * using a peer-to-peer connection (i.e. none of them are sending audio
+     * or video).
+     * This has false positives when e.g. an endpoint doesn't support p2p
+     * (firefox) and both are audio/video muted.
+     */
+    public boolean isP2p()
+    {
+        return isInactive() && getEndpointCount() == 2;
+    }
+
+    /**
+     * Whether the conference is inactive, in the sense that none of its
+     * endpoints are sending audio or video.
+     */
+    public boolean isInactive()
+    {
+        return getEndpoints().stream().noneMatch(e -> e.isSendingAudio() || e.isSendingVideo());
     }
 
     /**

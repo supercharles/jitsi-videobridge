@@ -28,21 +28,33 @@ class OctoConfig {
     class Config {
         companion object {
 
-            class QueueSizeProperty : SimpleProperty<Int>(
+            class RecvQueueSizeProperty : SimpleProperty<Int>(
                     newConfigAttributes {
                         name("videobridge.octo.recv-queue-size")
                         readOnce()
                     }
             )
 
-            private val queueSizeProperty = QueueSizeProperty()
+            private val recvQueueSizeProperty = RecvQueueSizeProperty()
 
             @JvmStatic
-            fun queueSize() = queueSizeProperty.value
+            fun recvQueueSize() = recvQueueSizeProperty.value
+
+            class SendQueueSizeProperty : SimpleProperty<Int>(
+                newConfigAttributes {
+                    name("videobridge.octo.send-queue-size")
+                    readOnce()
+                }
+            )
+
+            private val sendQueueSizeProperty = SendQueueSizeProperty()
+
+            @JvmStatic
+            fun sendQueueSize() = sendQueueSizeProperty.value
 
             class EnabledProperty : FallbackProperty<Boolean>(
                 // The legacy config file doesn't have an 'enabled' property,
-                // instead it was based on the values of the paremeters.  Here,
+                // instead it was based on the values of the parameters.  Here,
                 // we simulate a legacy 'enabled' value based on the results
                 // of validating the other properties in the legacy config
                 // file.
@@ -54,7 +66,7 @@ class OctoConfig {
                         if (cfg.hasPath("BIND_ADDRESS") && cfg.hasPath("BIND_PORT")) {
                             val bindAddress = cfg.getString("BIND_ADDRESS")
                             val bindPort = cfg.getInt("BIND_PORT")
-                            bindAddress != null && (bindPort.isUnpriviligedPort())
+                            bindAddress != null && (bindPort.isUnprivilegedPort())
                         } else {
                             false
                         }
@@ -106,7 +118,7 @@ class OctoConfig {
                     name("org.jitsi.videobridge.octo.BIND_PORT")
                     readOnce()
                     retrievedAs<Int>() convertedBy {
-                        if (!it.isUnpriviligedPort()) {
+                        if (!it.isUnprivilegedPort()) {
                             throw ConfigValueParsingException("Octo bind port " +
                                     "must be in the unprivileged port space")
                         }
@@ -152,4 +164,4 @@ class OctoConfig {
     }
 }
 
-private fun Int.isUnpriviligedPort(): Boolean = this in 1024..65535
+private fun Int.isUnprivilegedPort(): Boolean = this in 1024..65535

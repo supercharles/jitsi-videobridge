@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.jitsi.videobridge.rest;
+package org.jitsi.videobridge.websocket;
 
 import org.eclipse.jetty.websocket.servlet.*;
 import org.jitsi.osgi.*;
@@ -165,7 +165,7 @@ class ColibriWebSocketServlet
             return null;
         }
 
-        return new ColibriWebSocket(this, endpoint);
+        return new ColibriWebSocket(ids[2], this, endpoint.getMessageTransport());
     }
 
     /**

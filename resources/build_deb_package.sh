@@ -31,7 +31,7 @@ fi
 VERSION_FULL=$(git describe --match "v[0-9\.]*" --long)
 echo "Full version: ${VERSION_FULL}"
 
-VERSION=${VERSION_FULL:1}
+export VERSION=${VERSION_FULL:1}
 echo "Package version: ${VERSION}"
 
 REV=$(git log --pretty=format:'%h' -n 1)
@@ -42,7 +42,7 @@ dch -D unstable -r ""
 # the debian package
 mvn dependency:resolve
 
-# sets the version in the pom file so it will propagte to resulting jar
+# sets the version in the pom file so it will propagate to resulting jar
 mvn versions:set -DnewVersion="${VERSION}"
 
 # now build the deb
@@ -59,4 +59,4 @@ echo "-----"
 
 # Let's try deploying
 cd ..
-([ ! -x deploy.sh ] || ./deploy.sh)
+([ ! -x deploy.sh ] || ./deploy.sh "jvb" $VERSION )

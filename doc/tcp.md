@@ -1,8 +1,7 @@
 # General
 Jitsi Videobridge can accept and route RTP traffic over ICE/TCP. 
-The feature is on by default and TCP addresses will 
-automatically be returned as ICE candidates via 
-COLIBRI.
+The feature is off by default. When turned on, the bridge will listen
+on a TCP port and advertise ICE candidates of type TCP via COLIBRI.
 
 # Warning
 ICE/TCP is not the recommended way to deal with clients connecting
@@ -40,7 +39,7 @@ The file is usually located at
 ### *org.jitsi.videobridge.DISABLE_TCP_HARVESTER*
 Type: boolean
 
-Default: false
+Default: true
 
 Disables TCP support.
 
@@ -94,7 +93,7 @@ the local address configured. See the full documentation in
 Some of the networking-related behavior of jitsi-videobridge can be configured 
 through properties for the ICE library -- [ice4j](https://github.com/jitsi/ice4j).
 These properties can also be set in the jitsi-videobridge properties file. See 
-[the documenation of ice4j](https://github.com/jitsi/ice4j/blob/master/doc/configuration.md)
+[the documentation of ice4j](https://github.com/jitsi/ice4j/blob/master/doc/configuration.md)
 for details.
 
 

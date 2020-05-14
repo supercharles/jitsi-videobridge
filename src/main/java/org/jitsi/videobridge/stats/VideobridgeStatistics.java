@@ -23,6 +23,7 @@ import org.jitsi.videobridge.*;
 import org.jitsi.videobridge.octo.*;
 import org.jitsi.videobridge.octo.config.*;
 import org.jitsi.videobridge.shim.*;
+import org.jitsi.videobridge.xmpp.*;
 import org.json.simple.*;
 import org.osgi.framework.*;
 
@@ -61,6 +62,29 @@ public class VideobridgeStatistics
 
     public static final String EPS_NO_MSG_TRANSPORT_AFTER_DELAY =
         "num_eps_no_msg_transport_after_delay";
+
+    public static final String TOTAL_ICE_SUCCEEDED_RELAYED =
+        "total_ice_succeeded_relayed";
+
+    /**
+     * Number of configured MUC clients.
+     */
+    public static final String MUC_CLIENTS_CONFIGURED = "muc_clients_configured";
+
+    /**
+     * Number of configured MUC clients that are connected to XMPP.
+     */
+    public static final String MUC_CLIENTS_CONNECTED = "muc_clients_connected";
+
+    /**
+     * Number of MUCs that are configured
+     */
+    public static final String MUCS_CONFIGURED = "mucs_configured";
+
+    /**
+     * Number of MUCs that are joined.
+     */
+    public static final String MUCS_JOINED = "mucs_joined";
 
     /**
      * The indicator which determines whether {@link #generate()} is executing
@@ -158,17 +182,15 @@ public class VideobridgeStatistics
     {
         BundleContext bundleContext
                 = StatsManagerBundleActivator.getBundleContext();
-        OctoRelayService relayService
-                = ServiceUtils2.getService(bundleContext, OctoRelayService.class);
-        OctoRelay octoRelay
-                = relayService == null ? null : relayService.getRelay();
         Videobridge videobridge
                 = ServiceUtils2.getService(bundleContext, Videobridge.class);
         Videobridge.Statistics jvbStats = videobridge.getStatistics();
 
         int videoChannels = 0;
         int conferences = 0;
+        int octoConferences = 0;
         int endpoints = 0;
+        int octoEndpoints = 0;
         int videoStreams = 0;
         double fractionLostSum = 0d; // TODO verify
         int fractionLostCount = 0;
@@ -186,7 +208,14 @@ public class VideobridgeStatistics
         long rttCount = 0;
         int largestConferenceSize = 0;
         int[] conferenceSizes = new int[CONFERENCE_SIZE_BUCKETS];
-
+        int[] audioSendersBuckets = new int[CONFERENCE_SIZE_BUCKETS];
+        int[] videoSendersBuckets = new int[CONFERENCE_SIZE_BUCKETS];
+        int inactiveConferences = 0;
+        int p2pConferences = 0;
+        int inactiveEndpoints = 0;
+        int receiveOnlyEndpoints = 0;
+        int numAudioSenders = 0;
+        int numVideoSenders = 0;
 
         for (Conference conference : videobridge.getConferences())
         {
@@ -197,18 +226,35 @@ public class VideobridgeStatistics
                 continue;
             }
             conferences++;
-            int numConferenceEndpoints = conference.getLocalEndpointCount();
+            if (conference.isP2p())
+            {
+                p2pConferences++;
+            }
+
+            boolean inactive = conference.isInactive();
+            if (inactive)
+            {
+                inactiveConferences++;
+                inactiveEndpoints += conference.getEndpointCount();
+            }
+            if (conference.isOctoEnabled())
+            {
+                octoConferences++;
+            }
+            int numConferenceEndpoints = conference.getEndpointCount();
+            int numLocalEndpoints = conference.getLocalEndpointCount();
             if (numConferenceEndpoints > largestConferenceSize)
             {
                 largestConferenceSize = numConferenceEndpoints;
             }
-            int conferenceSizeIndex
-                    = numConferenceEndpoints < conferenceSizes.length
-                    ? numConferenceEndpoints
-                    : conferenceSizes.length - 1;
-            conferenceSizes[conferenceSizeIndex]++;
 
+            updateBuckets(conferenceSizes, numConferenceEndpoints);
             endpoints += numConferenceEndpoints;
+            octoEndpoints += (numConferenceEndpoints - numLocalEndpoints);
+
+            // TODO: count Octo endpoints too
+            int conferenceAudioSenders = 0;
+            int conferenceVideoSenders = 0;
 
             for (ContentShim contentShim : conferenceShim.getContents())
             {
@@ -219,6 +265,20 @@ public class VideobridgeStatistics
             }
             for (Endpoint endpoint : conference.getLocalEndpoints())
             {
+                boolean sendingAudio = endpoint.isSendingAudio();
+                boolean sendingVideo = endpoint.isSendingVideo();
+                if (sendingAudio)
+                {
+                    conferenceAudioSenders++;
+                }
+                if (sendingVideo)
+                {
+                    conferenceVideoSenders++;
+                }
+                if (!sendingAudio && !sendingVideo && !inactive)
+                {
+                    receiveOnlyEndpoints++;
+                }
                 TransceiverStats transceiverStats
                         = endpoint.getTransceiver().getTransceiverStats();
                 IncomingStatisticsSnapshot incomingStats
@@ -280,6 +340,11 @@ public class VideobridgeStatistics
 
                videoStreams += endpointStreams;
             }
+
+            updateBuckets(audioSendersBuckets, conferenceAudioSenders);
+            numAudioSenders += conferenceAudioSenders;
+            updateBuckets(videoSendersBuckets, conferenceVideoSenders);
+            numVideoSenders += conferenceVideoSenders;
         }
 
         // Loss rates
@@ -308,6 +373,17 @@ public class VideobridgeStatistics
         JSONArray conferenceSizesJson = new JSONArray();
         for (int size : conferenceSizes)
             conferenceSizesJson.add(size);
+
+        JSONArray audioSendersJson = new JSONArray();
+        for (int n : audioSendersBuckets)
+        {
+            audioSendersJson.add(n);
+        }
+        JSONArray videoSendersJson = new JSONArray();
+        for (int n : videoSendersBuckets)
+        {
+            videoSendersJson.add(n);
+        }
 
         // THREADS
         int threadCount = ManagementFactory.getThreadMXBean().getThreadCount();
@@ -361,6 +437,9 @@ public class VideobridgeStatistics
                     TOTAL_ICE_SUCCEEDED_TCP,
                     jvbStats.totalIceSucceededTcp.get());
             unlockedSetStat(
+                    TOTAL_ICE_SUCCEEDED_RELAYED,
+                    jvbStats.totalIceSucceededRelayed.get());
+            unlockedSetStat(
                     TOTAL_CONFERENCE_SECONDS,
                     jvbStats.totalConferenceSeconds.get());
 
@@ -379,11 +458,21 @@ public class VideobridgeStatistics
                 jvbStats.numEndpointsNoMessageTransportAfterDelay.get()
             );
             unlockedSetStat(CONFERENCES, conferences);
+            unlockedSetStat(OCTO_CONFERENCES, octoConferences);
+            unlockedSetStat(INACTIVE_CONFERENCES, inactiveConferences);
+            unlockedSetStat(P2P_CONFERENCES, p2pConferences);
             unlockedSetStat(PARTICIPANTS, endpoints);
+            unlockedSetStat(RECEIVE_ONLY_ENDPOINTS, receiveOnlyEndpoints);
+            unlockedSetStat(INACTIVE_ENDPOINTS, inactiveEndpoints);
+            unlockedSetStat(OCTO_ENDPOINTS, octoEndpoints);
+            unlockedSetStat(ENDPOINTS_SENDING_AUDIO, numAudioSenders);
+            unlockedSetStat(ENDPOINTS_SENDING_VIDEO, numVideoSenders);
             unlockedSetStat(VIDEO_CHANNELS, videoChannels);
             unlockedSetStat(VIDEO_STREAMS, videoStreams);
             unlockedSetStat(LARGEST_CONFERENCE, largestConferenceSize);
             unlockedSetStat(CONFERENCE_SIZES, conferenceSizesJson);
+            unlockedSetStat(CONFERENCES_BY_AUDIO_SENDERS, audioSendersJson);
+            unlockedSetStat(CONFERENCES_BY_VIDEO_SENDERS, videoSendersJson);
             unlockedSetStat(THREADS, threadCount);
             unlockedSetStat(
                     SHUTDOWN_IN_PROGRESS,
@@ -403,44 +492,84 @@ public class VideobridgeStatistics
                     TOTAL_PACKETS_RECEIVED, jvbStats.totalPacketsReceived.get());
             unlockedSetStat(TOTAL_PACKETS_SENT, jvbStats.totalPacketsSent.get());
 
+            OctoRelayService relayService
+                = ServiceUtils2.getService(bundleContext, OctoRelayService.class);
+            OctoRelayService.Stats octoRelayServiceStats
+                = relayService == null ? null : relayService.getStats();
+
             unlockedSetStat(
                     TOTAL_BYTES_RECEIVED_OCTO,
-                    octoRelay == null ? 0 : octoRelay.getBytesReceived());
+                    octoRelayServiceStats == null ? 0 : octoRelayServiceStats.getBytesReceived());
             unlockedSetStat(
                     TOTAL_BYTES_SENT_OCTO,
-                    octoRelay == null ? 0 : octoRelay.getBytesSent());
+                    octoRelayServiceStats == null ? 0 : octoRelayServiceStats.getBytesSent());
             unlockedSetStat(
                     TOTAL_PACKETS_RECEIVED_OCTO,
-                    octoRelay == null ? 0 : octoRelay.getPacketsReceived());
+                    octoRelayServiceStats == null ? 0 : octoRelayServiceStats.getPacketsReceived());
             unlockedSetStat(
                     TOTAL_PACKETS_SENT_OCTO,
-                    octoRelay == null ? 0 : octoRelay.getPacketsSent());
+                    octoRelayServiceStats == null ? 0 : octoRelayServiceStats.getPacketsSent());
             unlockedSetStat(
                     TOTAL_PACKETS_DROPPED_OCTO,
-                    octoRelay == null ? 0 : octoRelay.getPacketsDropped());
+                    octoRelayServiceStats == null ? 0 : octoRelayServiceStats.getPacketsDropped());
             unlockedSetStat(
                     OCTO_RECEIVE_BITRATE,
-                    octoRelay == null
-                            ? 0 : (octoRelay.getReceiveBitrate() + 500) / 1000);
+                    octoRelayServiceStats == null
+                            ? 0 : octoRelayServiceStats.getReceiveBitrate());
+            unlockedSetStat(
+                    OCTO_RECEIVE_PACKET_RATE,
+                    octoRelayServiceStats == null
+                            ? 0 : octoRelayServiceStats.getReceivePacketRate());
             unlockedSetStat(
                     OCTO_SEND_BITRATE,
-                    octoRelay == null
-                            ? 0 : (octoRelay.getSendBitrate() + 500) / 1000);
+                    octoRelayServiceStats == null
+                            ? 0 : octoRelayServiceStats.getSendBitrate());
+            unlockedSetStat(
+                    OCTO_SEND_PACKET_RATE,
+                    octoRelayServiceStats == null
+                            ? 0 : octoRelayServiceStats.getSendPacketRate());
+            unlockedSetStat(
+                    TOTAL_DOMINANT_SPEAKER_CHANGES,
+                    jvbStats.totalDominantSpeakerChanges.sum());
 
             unlockedSetStat(TIMESTAMP, timestampFormat.format(new Date()));
-            if (octoRelay != null)
+            if (octoRelayServiceStats != null)
             {
-                unlockedSetStat(RELAY_ID, octoRelay.getId());
+                unlockedSetStat(RELAY_ID, octoRelayServiceStats.getRelayId());
             }
             if (region != null)
             {
                 unlockedSetStat(REGION, region);
             }
             unlockedSetStat(VERSION, videobridge.getVersion().toString());
+
+            ClientConnectionImpl clientConnection
+                    = ServiceUtils2.getService(bundleContext, ClientConnectionImpl.class);
+            if (clientConnection != null)
+            {
+                unlockedSetStat(
+                        MUC_CLIENTS_CONFIGURED,
+                        clientConnection.getMucClientManager().getClientCount());
+                unlockedSetStat(
+                        MUC_CLIENTS_CONNECTED,
+                        clientConnection.getMucClientManager().getClientConnectedCount());
+                unlockedSetStat(
+                        MUCS_CONFIGURED,
+                        clientConnection.getMucClientManager().getMucCount());
+                unlockedSetStat(
+                        MUCS_JOINED,
+                        clientConnection.getMucClientManager().getMucJoinedCount());
+            }
         }
         finally
         {
             lock.unlock();
         }
+    }
+
+    private static void updateBuckets(int[] buckets, int n)
+    {
+        int index = Math.min(n, buckets.length - 1);
+        buckets[index]++;
     }
 }
